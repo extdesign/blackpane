@@ -239,8 +239,10 @@ blackpane: macOS проверяет программу, из которой за
 
 Экран отключается закрытым вызовом `CGSConfigureDisplayEnabled` (SkyLight, доступен через
 CoreGraphics) в транзакции `CGBeginDisplayConfiguration` … `CGCompleteDisplayConfiguration`
-с `kCGConfigureForSession`. Закрытый API может сломаться в новой macOS — тогда `dark`
-вернёт ошибку, а экран останется включённым.
+с `kCGConfigureForSession`. Транзакция повторяет стандартную схему Apple для настройки
+дисплеев (начать, изменить, завершить, при ошибке отменить); закрытый только сам вызов
+изменения. Закрытый API может сломаться в новой macOS — тогда `dark` вернёт ошибку, а
+экран останется включённым.
 
 Выключенный экран пропадает из списка мониторов, поэтому его номер запоминается в файле
 `~/Library/Application Support/blackpane/builtin-id` — не во временной папке: оттуда

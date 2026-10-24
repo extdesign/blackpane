@@ -237,7 +237,9 @@ The watcher listens to keys, mouse buttons and scrolling and changes nothing.
 
 The display is turned off with the private `CGSConfigureDisplayEnabled` call (SkyLight,
 reachable through CoreGraphics) inside a `CGBeginDisplayConfiguration` …
-`CGCompleteDisplayConfiguration` transaction with `kCGConfigureForSession`. A private API
+`CGCompleteDisplayConfiguration` transaction with `kCGConfigureForSession`. The
+transaction follows Apple's standard display configuration pattern (begin, change,
+complete, cancel on error); only the change itself is the private call. A private API
 may break in a future macOS — then `dark` returns an error and the display stays on.
 
 A turned-off display disappears from the display list, so its ID is kept in

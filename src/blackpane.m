@@ -197,6 +197,8 @@ static int has_external(void) {
   return 0;
 }
 
+// Apple's standard display configuration transaction (Begin → change → Complete, Cancel
+// on error), with the private CGSConfigureDisplayEnabled as the change.
 static CGError set_enabled(CGDirectDisplayID id, bool enabled) {
   CGDisplayConfigRef cfg;
   CGError err = CGBeginDisplayConfiguration(&cfg);
