@@ -179,6 +179,23 @@ static CGError set_enabled(CGDirectDisplayID id, bool enabled) {
   return CGCompleteDisplayConfiguration(cfg, kCGConfigureForSession);
 }
 
+#define GUESSED_BUILTIN_ID 1 // the built-in display is 1 on Apple Silicon
+
+// One attempt to turn the built-in display on, by the ID saved when it was turned off.
+// Without a saved ID: the `light` command gives up (it reports the problem), the watcher
+// guesses GUESSED_BUILTIN_ID — it must not leave the Mac without a display. Retries are
+// the caller's business. *used gets the ID tried, 0 if none.
+static CGError light_once(bool guess_if_unknown, CGDirectDisplayID *used) {
+  CGDirectDisplayID b = load_id();
+  if (!b && guess_if_unknown)
+    b = GUESSED_BUILTIN_ID;
+  if (used)
+    *used = b;
+  if (!b)
+    return kCGErrorIllegalArgument;
+  return set_enabled(b, true);
+}
+
 static int cmd_status(void) {
   CGDirectDisplayID ids[MAX_DISPLAYS];
   uint32_t n = online(ids);
@@ -218,13 +235,12 @@ static int cmd_light(void) {
     printf("built-in id=%u is already lit\n", b);
     return 0;
   }
-  b = load_id();
+  CGError err = light_once(false, &b);
   if (!b) {
     fprintf(stderr, "built-in display id unknown\n");
     log_line("light failed: built-in display id unknown");
     return 1;
   }
-  CGError err = set_enabled(b, true);
   printf("light id=%u err=%d\n", b, err);
   log_line("light id=%u err=%d", b, err);
   return err != kCGErrorSuccess;
@@ -270,10 +286,7 @@ static void check(void *ctx) {
     return;
   }
   quiet = 0;
-  CGDirectDisplayID b = load_id();
-  if (!b)
-    b = 1; // the built-in display is 1 on Apple Silicon
-  CGError err = set_enabled(b, true);
+  CGError err = light_once(true, NULL);
   log_event("no external monitor — turning the built-in display on", err);
   if (err != kCGErrorSuccess && ++retries <= MAX_RETRIES)
     schedule_check(2.0);
@@ -334,15 +347,20 @@ static CFAbsoluteTime ropt_since;
 static unsigned tap_gen;        // ID of the pending toggle; any other ID — cancelled
 static int tap_waiting;
 
+// Termination signals: the watcher catches them to turn the display on before exiting
+// (restore_on_signals) and gives the permission-check child default handling for them
+// back (access_still_granted). One list for both, so they can't drift apart.
+static const int exit_signals[] = {SIGTERM, SIGINT, SIGHUP, SIGQUIT};
+#define EXIT_SIGNALS_COUNT (sizeof exit_signals / sizeof exit_signals[0])
+
 // Turn the built-in display on, retrying: CoreGraphics may refuse for a moment (sleep,
 // display reconfiguration). Used before exiting, when there's no later check to retry.
 static CGError restore_builtin(void) {
-  CGDirectDisplayID b = load_id();
   CGError err = kCGErrorSuccess;
   for (int i = 0; i < RESTORE_TRIES; i++) {
     if (find_builtin())
       return kCGErrorSuccess;
-    err = set_enabled(b ? b : 1, true);
+    err = light_once(true, NULL);
     if (err == kCGErrorSuccess)
       return err;
     usleep(RESTORE_PAUSE_US);
@@ -365,10 +383,8 @@ static int access_still_granted(void) {
   posix_spawnattr_t attr;
   sigset_t dflt;
   sigemptyset(&dflt);
-  sigaddset(&dflt, SIGTERM);
-  sigaddset(&dflt, SIGINT);
-  sigaddset(&dflt, SIGHUP);
-  sigaddset(&dflt, SIGQUIT);
+  for (size_t i = 0; i < EXIT_SIGNALS_COUNT; i++)
+    sigaddset(&dflt, exit_signals[i]);
   posix_spawnattr_init(&attr);
   posix_spawnattr_setsigdefault(&attr, &dflt);
   posix_spawnattr_setflags(&attr, POSIX_SPAWN_SETSIGDEF);
@@ -528,12 +544,12 @@ static void restore_and_exit(void *ctx) {
 }
 
 static void restore_on_signals(void) {
-  static const int sigs[] = {SIGTERM, SIGINT, SIGHUP, SIGQUIT};
-  for (size_t i = 0; i < sizeof sigs / sizeof sigs[0]; i++) {
-    signal(sigs[i], SIG_IGN); // otherwise the process dies before the handler runs
-    dispatch_source_t s = dispatch_source_create(DISPATCH_SOURCE_TYPE_SIGNAL, sigs[i], 0,
+  for (size_t i = 0; i < EXIT_SIGNALS_COUNT; i++) {
+    int sig = exit_signals[i];
+    signal(sig, SIG_IGN); // otherwise the process dies before the handler runs
+    dispatch_source_t s = dispatch_source_create(DISPATCH_SOURCE_TYPE_SIGNAL, sig, 0,
                                                  dispatch_get_main_queue());
-    dispatch_set_context(s, (void *)(intptr_t)sigs[i]);
+    dispatch_set_context(s, (void *)(intptr_t)sig);
     dispatch_source_set_event_handler_f(s, restore_and_exit);
     dispatch_resume(s);
   }
