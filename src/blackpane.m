@@ -1,8 +1,8 @@
 // blackpane — turn a MacBook's built-in display off and on while the lid stays open.
 //
-//   blackpane toggle    turn off if on, on if off
-//   blackpane off       turn off (only if an external monitor is connected)
-//   blackpane on        turn on
+//   blackpane toggle    dark if lit, light if dark
+//   blackpane dark      turn the built-in display off (only with an external monitor)
+//   blackpane light     turn the built-in display on
 //   blackpane status    displays macOS sees
 //   blackpane version   version
 //   blackpane access    is Input Monitoring granted (exit code 0 — yes)
@@ -11,7 +11,8 @@
 //
 // Log: ~/Library/Logs/blackpane.log — actions, errors, the version on every line.
 //
-// off, on and toggle do their job and exit. A turned-off display stays off through
+// dark, light and toggle do their job and exit. dark/light rather than off/on: "blackpane
+// on" would read both as "display on" and "black pane on". A turned-off display stays off through
 // screen lock, sleep, unplugging the external monitor and logout — only a reboot brings
 // it back. Hence watch: it sleeps waiting for events, uses no CPU, and turns the display
 // on when it exits (logout, agent stopped).
@@ -193,43 +194,43 @@ static int cmd_status(void) {
   return 0;
 }
 
-static int cmd_off(void) {
+static int cmd_dark(void) {
   CGDirectDisplayID b = find_builtin();
   if (!b) {
-    fprintf(stderr, "built-in display not found: already off or the lid is closed\n");
+    fprintf(stderr, "built-in display not found: already dark or the lid is closed\n");
     return 1;
   }
   if (!has_external()) {
     fprintf(stderr, "no external monitor: not turning the built-in display off\n");
-    log_line("off refused: no external monitor");
+    log_line("dark refused: no external monitor");
     return 1;
   }
   save_id(b);
   CGError err = set_enabled(b, false);
-  printf("off id=%u err=%d\n", b, err);
-  log_line("off id=%u err=%d", b, err);
+  printf("dark id=%u err=%d\n", b, err);
+  log_line("dark id=%u err=%d", b, err);
   return err != kCGErrorSuccess;
 }
 
-static int cmd_on(void) {
+static int cmd_light(void) {
   CGDirectDisplayID b = find_builtin();
   if (b) {
-    printf("built-in id=%u is already on\n", b);
+    printf("built-in id=%u is already lit\n", b);
     return 0;
   }
   b = load_id();
   if (!b) {
     fprintf(stderr, "built-in display id unknown\n");
-    log_line("on failed: built-in display id unknown");
+    log_line("light failed: built-in display id unknown");
     return 1;
   }
   CGError err = set_enabled(b, true);
-  printf("on id=%u err=%d\n", b, err);
-  log_line("on id=%u err=%d", b, err);
+  printf("light id=%u err=%d\n", b, err);
+  log_line("light id=%u err=%d", b, err);
   return err != kCGErrorSuccess;
 }
 
-static int cmd_toggle(void) { return find_builtin() ? cmd_off() : cmd_on(); }
+static int cmd_toggle(void) { return find_builtin() ? cmd_dark() : cmd_light(); }
 
 // --- watch ---
 
@@ -409,8 +410,7 @@ static void tap_fire(void *ctx) {
     exit(EXIT_NO_ACCESS);
   }
   int rc = cmd_toggle();
-  log_event(find_builtin() ? "right Option — built-in display on"
-                           : "right Option — built-in display off",
+  log_event(find_builtin() ? "right Option — light" : "right Option — dark",
             rc);
 }
 
@@ -564,10 +564,10 @@ int main(int argc, char **argv) {
   const char *cmd = argc > 1 ? argv[1] : "status";
   if (!strcmp(cmd, "toggle"))
     return cmd_toggle();
-  if (!strcmp(cmd, "off"))
-    return cmd_off();
-  if (!strcmp(cmd, "on"))
-    return cmd_on();
+  if (!strcmp(cmd, "dark"))
+    return cmd_dark();
+  if (!strcmp(cmd, "light"))
+    return cmd_light();
   if (!strcmp(cmd, "status"))
     return cmd_status();
   if (!strcmp(cmd, "version")) {
@@ -581,6 +581,6 @@ int main(int argc, char **argv) {
   }
   if (!strcmp(cmd, "watch"))
     return cmd_watch();
-  fprintf(stderr, "usage: blackpane [toggle|off|on|status|version|access|watch]\n");
+  fprintf(stderr, "usage: blackpane [toggle|dark|light|status|version|access|watch]\n");
   return 2;
 }

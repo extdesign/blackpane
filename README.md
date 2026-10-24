@@ -131,7 +131,7 @@ make uninstall
 ```
 
 It stops the agent (the watcher turns the built-in display on as it exits), runs
-`blackpane on` in case the watcher wasn't running, and removes everything blackpane
+`blackpane light` in case the watcher wasn't running, and removes everything blackpane
 leaves behind:
 
 | What | Where |
@@ -155,9 +155,9 @@ with a certificate or not — and
 ## Commands
 
 ```text
-blackpane toggle    turn off if on, on if off
-blackpane off       turn off — only if an external monitor is connected
-blackpane on        turn on
+blackpane toggle    dark if lit, light if dark
+blackpane dark      built-in display off — only if an external monitor is connected
+blackpane light     built-in display on
 blackpane status    displays macOS sees
 blackpane version   version
 blackpane access    is Input Monitoring granted (exit code 0 — yes)
@@ -172,16 +172,16 @@ macOS checks the app the program was launched from. The watcher runs it for itse
 `~/Library/Logs/blackpane.log` — a plain text file. In Console.app it's under “Log
 Reports” as `blackpane.log`, with the whole history; in Terminal — `tail` or `less`.
 
-What gets written: watcher start and stop, every `on`/`off` (from the key, the watcher or
+What gets written: watcher start and stop, every `dark`/`light` (from the key, the watcher or
 the command line) with its result, refusals, display checks with the list of active
 displays, permission state. Errors come with a non-zero `err=`. Each line carries the
 version and the process ID:
 
 ```text
-2026-10-25 00:42:10 [0.6.0 4512] watcher 0.6.0 started err=0
-2026-10-25 00:42:10 [0.6.0 4512] watching the right Option key err=0
-2026-10-25 00:42:31 [0.6.0 4512] off id=1 err=0
-2026-10-25 00:42:31 [0.6.0 4512] right Option — built-in display off err=0
+2026-10-25 00:42:10 [0.8.0 4512] watcher 0.8.0 started err=0
+2026-10-25 00:42:10 [0.8.0 4512] watching the right Option key err=0
+2026-10-25 00:42:31 [0.8.0 4512] dark id=1 err=0
+2026-10-25 00:42:31 [0.8.0 4512] right Option — dark err=0
 ```
 
 It's a few lines a day, so the file is never rotated — a megabyte takes years. The
@@ -228,7 +228,7 @@ The watcher listens to keys, mouse buttons and scrolling and changes nothing.
 The display is turned off with the private `CGSConfigureDisplayEnabled` call (SkyLight,
 reachable through CoreGraphics) inside a `CGBeginDisplayConfiguration` …
 `CGCompleteDisplayConfiguration` transaction with `kCGConfigureForSession`. A private API
-may break in a future macOS — then `off` returns an error and the display stays on.
+may break in a future macOS — then `dark` returns an error and the display stays on.
 
 A turned-off display disappears from the display list, so its ID is kept in
 `blackpane.builtin-id` in the user's temporary folder (`getconf DARWIN_USER_TEMP_DIR`).
@@ -244,8 +244,8 @@ Without the watcher:
 
 | With the built-in display off | Built-in display |
 |---|---|
-| `off`, then the process exits | stays off — no process needs to hold it |
-| `on` from a separate run | turns on |
+| `dark`, then the process exits | stays off — no process needs to hold it |
+| `light` from a separate run | turns on |
 | Screen lock, sleep, displays asleep | stays off |
 | Lid closed with a monitor connected | nothing flickers: there's nothing to switch to |
 | Monitor unplugged (lid open or closed) | **stays off** — the Mac has no display |

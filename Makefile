@@ -47,13 +47,13 @@ install: $(BIN)
 	  launchctl print $(DOMAIN)/$(LABEL) >/dev/null 2>&1 || break; sleep 0.5; done
 	launchctl bootstrap $(DOMAIN) $(AGENT)
 
-# The watcher turns the display on as it stops; `on` covers a watcher that wasn't running.
+# The watcher turns the display on as it stops; `light` covers a watcher that wasn't running.
 # The log ~/Library/Logs/blackpane.log is kept for later analysis.
 # Input Monitoring can't be reset by a command: tccutil accepts only apps known to
 # LaunchServices, and a command-line program isn't one.
 uninstall:
 	@launchctl bootout $(DOMAIN)/$(LABEL) 2>/dev/null || true
-	@if [ -x $(PREFIX)/$(NAME) ]; then $(PREFIX)/$(NAME) on || true; fi
+	@if [ -x $(PREFIX)/$(NAME) ]; then $(PREFIX)/$(NAME) light || true; fi
 	rm -f $(AGENT) $(PREFIX)/$(NAME) $(STATE)
 	@echo "Remove blackpane from System Settings → Privacy & Security → Input Monitoring (“−”)."
 	@echo "The log ~/Library/Logs/blackpane.log is kept; delete it by hand if not needed."

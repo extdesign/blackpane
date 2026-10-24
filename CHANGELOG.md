@@ -2,6 +2,12 @@
 
 Versions follow `MAJOR.MINOR.PATCH`: a fix bumps the patch, a new feature bumps the minor.
 
+## 0.8.0 — 2026-10-25
+
+- Commands `off` and `on` are renamed to `dark` (turn the built-in display off) and
+  `light` (turn it on): “blackpane on” read both as “display on” and as “black pane on”.
+  The log says `dark`/`light` too.
+
 ## 0.7.1 — 2026-10-25
 
 Fixes from code review:
