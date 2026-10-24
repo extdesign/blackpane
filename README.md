@@ -306,6 +306,9 @@ Both are much larger: in BetterDisplay disconnecting a display is part of a big 
 toolkit (not in the free version); blackoutd is about 3,000 lines of daemon around it
 (menu bar icon, re-applying after sleep, recovering a stalled external monitor).
 blackpane is one program of about 650 lines, comments included, with no menu and no
-settings. Its code is
-written from scratch; the public documentation of these projects helped when analysing
-problems along the way.
+settings. Its code is written from scratch; the public documentation of these projects
+helped when analysing problems along the way.
+
+## License
+
+[MIT](LICENSE) © 2026 Sergey Teterlev.
