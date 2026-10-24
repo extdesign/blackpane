@@ -5,27 +5,30 @@ BIN     := build/$(NAME)
 PREFIX  := $(HOME)/.local/bin
 AGENTS  := $(HOME)/Library/LaunchAgents
 AGENT   := $(AGENTS)/$(LABEL).plist
-TMP     := $(shell getconf DARWIN_USER_TEMP_DIR)
-STATE   := $(TMP)$(NAME).builtin-id $(TMP)$(NAME).no-access
+STATEDIR := $(HOME)/Library/Application Support/$(NAME)
+MARK    := $(shell getconf DARWIN_USER_TEMP_DIR)$(NAME).no-access
 DOMAIN  := gui/$(shell id -u)
 
 # Signing. By default ad hoc ("-"): every rebuild is a new program for macOS and the
 # Input Monitoring permission has to be granted again. With a code-signing certificate
 # (`make cert` creates one) the permission survives rebuilds. A valid certificate CERT
 # in the keychain is used automatically; `make … SIGN="name"` overrides. An unrelated
-# SIGN variable in the environment is ignored.
+# SIGN variable in the environment is ignored. The keychain is queried only when a goal
+# builds the program — not for uninstall, clean, cert or cert-remove.
 CERT      := blackpane-signing
 KEYCHAIN  := $(HOME)/Library/Keychains/login.keychain-db
+STAMP     := build/.sign
+NO_BUILD_GOALS := uninstall clean cert cert-remove
+ifneq ($(filter-out $(NO_BUILD_GOALS),$(or $(MAKECMDGOALS),all)),)
 AUTO_SIGN := $(shell security find-identity -v -p codesigning 2>/dev/null | grep -q '"$(CERT)"' && echo $(CERT) || echo -)
 ifneq ($(origin SIGN),command line)
 SIGN := $(AUTO_SIGN)
 endif
-
 # The identity used for the last build. If SIGN differs from it, the build is redone even
 # when the source is unchanged, so a new certificate or SIGN=… takes effect. Compared when
 # the Makefile is read: a stamp rule with timestamps misses changes within one second.
-STAMP       := build/.sign
 SIGN_CHANGED := $(shell [ "$$(cat $(STAMP) 2>/dev/null)" = '$(SIGN)' ] || echo yes)
+endif
 
 all: $(BIN)
 
@@ -34,7 +37,7 @@ all: $(BIN)
 # for a finished one.
 $(BIN): src/$(NAME).m VERSION $(if $(SIGN_CHANGED),FORCE)
 	mkdir -p build
-	clang -O2 -Wall -DBLACKPANE_VERSION='"$(VERSION)"' -o $@.tmp $< -framework AppKit
+	clang -O2 -Wall -DBLACKPANE_VERSION='"$(VERSION)"' -o $@.tmp $< -framework AppKit -framework IOKit
 	codesign --force --sign "$(SIGN)" --identifier $(LABEL) $@.tmp || { rm -f $@.tmp; exit 1; }
 	mv -f $@.tmp $@
 	@echo '$(SIGN)' > $(STAMP)
@@ -58,7 +61,8 @@ install: $(BIN)
 uninstall:
 	@launchctl bootout $(DOMAIN)/$(LABEL) 2>/dev/null || true
 	@if [ -x $(PREFIX)/$(NAME) ]; then $(PREFIX)/$(NAME) light || true; fi
-	rm -f $(AGENT) $(PREFIX)/$(NAME) $(STATE)
+	rm -f $(AGENT) $(PREFIX)/$(NAME) "$(MARK)"
+	rm -rf "$(STATEDIR)"
 	@echo "Remove blackpane from System Settings → Privacy & Security → Input Monitoring (“−”)."
 	@echo "The log ~/Library/Logs/blackpane.log is kept; delete it by hand if not needed."
 

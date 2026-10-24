@@ -138,7 +138,8 @@ leaves behind:
 |---|---|
 | the launchd agent | `~/Library/LaunchAgents/extdesign.blackpane.plist` |
 | the program | `~/.local/bin/blackpane` |
-| the saved built-in display ID and the “no permission” mark | `blackpane.builtin-id`, `blackpane.no-access` in `getconf DARWIN_USER_TEMP_DIR` |
+| the saved built-in display ID | `~/Library/Application Support/blackpane/` |
+| the “no permission” mark | `blackpane.no-access` in `getconf DARWIN_USER_TEMP_DIR` |
 
 The log `~/Library/Logs/blackpane.log` is kept for later analysis; delete it by hand if
 not needed.
@@ -178,11 +179,17 @@ displays, permission state. Errors come with a non-zero `err=`. Each line carrie
 version and the process ID:
 
 ```text
-2026-10-25 00:42:10 [0.8.0 4512] watcher 0.8.0 started err=0
-2026-10-25 00:42:10 [0.8.0 4512] watching the right Option key err=0
-2026-10-25 00:42:31 [0.8.0 4512] dark id=1 err=0
-2026-10-25 00:42:31 [0.8.0 4512] right Option — dark err=0
+2026-10-25 00:42:10 [0.8.2 4512] watcher 0.8.2 started err=0
+2026-10-25 00:42:10 [0.8.2 4512] watching the right Option key err=0
+2026-10-25 00:42:31 [0.8.2 4512] dark (key) id=1 err=0
+2026-10-25 00:42:33 [0.8.2 4512] check: 1 online — 3:3840x1600:vendor=0x1e6d
+2026-10-25 00:45:02 [0.8.2 4517] light (cli) id=1 err=0
 ```
+
+`(key)` — the right Option, `(cli)` — the command line. A `check` line lists the online
+displays the decision was made on; `:inactive` marks one that's online but not shown
+(hardware mirroring), `:virtual` the placeholder macOS creates when no monitor is left,
+and `lid closed` is added when the lid is closed.
 
 It's a few lines a day, so the file is never rotated — a megabyte takes years. The
 watcher without permission restarts every 10 seconds but writes about it only once.
@@ -222,6 +229,9 @@ The watcher listens to keys, mouse buttons and scrolling and changes nothing.
   a second press starts; the moment it does, the pending switch is cancelled.
 - While the screen is locked, macOS doesn't pass key presses to apps — the key doesn't
   work there.
+- With the lid closed the key does nothing: the built-in display is out of the list
+  then as if it were dark, so there's nothing to toggle. `blackpane light` still works
+  with the lid closed — the panel lights up when the lid is opened.
 
 ## How it works
 
@@ -231,8 +241,13 @@ reachable through CoreGraphics) inside a `CGBeginDisplayConfiguration` …
 may break in a future macOS — then `dark` returns an error and the display stays on.
 
 A turned-off display disappears from the display list, so its ID is kept in
-`blackpane.builtin-id` in the user's temporary folder (`getconf DARWIN_USER_TEMP_DIR`).
-Without the file, ID 1 is used — that's the built-in display on Apple Silicon.
+`~/Library/Application Support/blackpane/builtin-id` — not in the temporary folder, which
+macOS clears of files untouched for a few days, while the display may stay dark longer.
+Without the file, the watcher uses ID 1 — the built-in display on Apple Silicon;
+`blackpane light` reports the missing ID instead of guessing.
+
+With the lid closed the built-in display also drops out of the list. blackpane tells the
+two apart by the lid state (`AppleClamshellState` of `IOPMrootDomain`).
 
 The watcher (`watch`) is a process without windows, Dock icon or menu. It sleeps waiting
 for events and uses no CPU. Memory: about 9–10 MB physical footprint (`footprint <pid>`);
@@ -288,6 +303,7 @@ Things that weren't obvious:
 Both are much larger: in BetterDisplay disconnecting a display is part of a big paid
 toolkit (not in the free version); blackoutd is about 3,000 lines of daemon around it
 (menu bar icon, re-applying after sleep, recovering a stalled external monitor).
-blackpane is one program of about 400 lines with no menu and no settings. Its code is
+blackpane is one program of about 650 lines, comments included, with no menu and no
+settings. Its code is
 written from scratch; the public documentation of these projects helped when analysing
 problems along the way.

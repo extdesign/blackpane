@@ -11,11 +11,11 @@
 //
 // Log: ~/Library/Logs/blackpane.log — actions, errors, the version on every line.
 //
-// dark, light and toggle do their job and exit. dark/light rather than off/on: "blackpane
-// on" would read both as "display on" and "black pane on". A turned-off display stays off through
-// screen lock, sleep, unplugging the external monitor and logout — only a reboot brings
-// it back. Hence watch: it sleeps waiting for events, uses no CPU, and turns the display
-// on when it exits (logout, agent stopped).
+// dark, light and toggle do their job and exit. dark/light rather than off/on:
+// "blackpane on" would read both as "display on" and as "black pane on". A turned-off
+// display stays off through screen lock, sleep, unplugging the external monitor and
+// logout — only a reboot brings it back. Hence watch: it sleeps waiting for events, uses
+// no CPU, and turns the display on when it exits (logout, agent stopped).
 //
 // The display is turned off with the private CGSConfigureDisplayEnabled call
 // (SkyLight, reachable through CoreGraphics).
@@ -31,9 +31,13 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <time.h>
+#include <IOKit/IOKitLib.h>
+#include <sys/stat.h>
 #include <sys/wait.h>
+#include <time.h>
 #include <unistd.h>
+
+extern char **environ;
 
 // The Makefile passes the version from the VERSION file; "dev" marks a build made
 // without it (e.g. plain clang).
@@ -79,29 +83,38 @@ static void log_line(const char *fmt, ...) {
   fclose(f);
 }
 
-// Files in the user's temporary folder: the ID of the turned-off display (it drops out
-// of the display list) and the mark “no permission, already logged”. Each name has its
-// own buffer, so holding one path while asking for the other is safe.
-static const char *temp_path(char *buf, size_t size, const char *name) {
-  char dir[PATH_MAX];
-  if (confstr(_CS_DARWIN_USER_TEMP_DIR, dir, sizeof dir) == 0)
-    return NULL;
-  snprintf(buf, size, "%s%s", dir, name);
-  return buf;
-}
+// The ID of the turned-off display (it drops out of the display list) lives in
+// ~/Library/Application Support/blackpane — not in the temporary folder, which macOS
+// clears of files untouched for a few days, while the display may stay dark longer.
+// The mark “no permission, already logged” is disposable and stays in the temporary
+// folder. Each path has its own buffer, so holding one while asking for the other is safe.
+#define STATE_DIR "Library/Application Support/blackpane"
 
 static const char *state_path(void) {
   static char path[PATH_MAX];
-  return temp_path(path, sizeof path, "blackpane.builtin-id");
+  const char *home = getenv("HOME");
+  if (!home)
+    return NULL;
+  snprintf(path, sizeof path, "%s/" STATE_DIR "/builtin-id", home);
+  return path;
 }
 
 static const char *no_access_path(void) {
   static char path[PATH_MAX];
-  return temp_path(path, sizeof path, "blackpane.no-access");
+  char dir[PATH_MAX];
+  if (confstr(_CS_DARWIN_USER_TEMP_DIR, dir, sizeof dir) == 0)
+    return NULL;
+  snprintf(path, sizeof path, "%sblackpane.no-access", dir);
+  return path;
 }
 
 static void save_id(CGDirectDisplayID id) {
   const char *p = state_path();
+  char dir[PATH_MAX];
+  if (p) {
+    snprintf(dir, sizeof dir, "%s/" STATE_DIR, getenv("HOME"));
+    mkdir(dir, 0755);
+  }
   FILE *f = p ? fopen(p, "w") : NULL;
   if (!f)
     return;
@@ -128,7 +141,25 @@ static uint32_t online(CGDirectDisplayID *ids) {
   return n;
 }
 
-// The built-in display if it's in the list; 0 — it's off (or the lid is closed).
+// Is the lid closed? With the lid closed the built-in display drops out of the list just
+// as when it's turned off, so callers that would otherwise read "not found" as "dark"
+// check this first.
+static int lid_closed(void) {
+  io_service_t root =
+      IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("IOPMrootDomain"));
+  if (!root)
+    return 0;
+  CFTypeRef v = IORegistryEntryCreateCFProperty(root, CFSTR("AppleClamshellState"),
+                                                kCFAllocatorDefault, 0);
+  IOObjectRelease(root);
+  int closed = v && CFGetTypeID(v) == CFBooleanGetTypeID() && CFBooleanGetValue(v);
+  if (v)
+    CFRelease(v);
+  return closed;
+}
+
+// The built-in display if it's in the list; 0 — it's off or the lid is closed
+// (lid_closed tells which).
 static CGDirectDisplayID find_builtin(void) {
   CGDirectDisplayID ids[MAX_DISPLAYS];
   uint32_t n = online(ids);
@@ -211,25 +242,35 @@ static int cmd_status(void) {
   return 0;
 }
 
-static int cmd_dark(void) {
+// src — who asked: "cli" (command line) or "key" (the right Option); it goes into the
+// log line, one line per action.
+
+static int cmd_dark(const char *src) {
+  if (lid_closed()) {
+    fprintf(stderr, "the lid is closed: nothing to turn off\n");
+    log_line("dark (%s) refused: lid closed", src);
+    return 1;
+  }
   CGDirectDisplayID b = find_builtin();
   if (!b) {
-    fprintf(stderr, "built-in display not found: already dark or the lid is closed\n");
+    fprintf(stderr, "built-in display not found: already dark\n");
     return 1;
   }
   if (!has_external()) {
     fprintf(stderr, "no external monitor: not turning the built-in display off\n");
-    log_line("dark refused: no external monitor");
+    log_line("dark (%s) refused: no external monitor", src);
     return 1;
   }
   save_id(b);
   CGError err = set_enabled(b, false);
   printf("dark id=%u err=%d\n", b, err);
-  log_line("dark id=%u err=%d", b, err);
+  log_line("dark (%s) id=%u err=%d", src, b, err);
   return err != kCGErrorSuccess;
 }
 
-static int cmd_light(void) {
+// With the lid closed this still enables the panel in the display configuration, so it
+// lights up when the lid is opened.
+static int cmd_light(const char *src) {
   CGDirectDisplayID b = find_builtin();
   if (b) {
     printf("built-in id=%u is already lit\n", b);
@@ -238,15 +279,23 @@ static int cmd_light(void) {
   CGError err = light_once(false, &b);
   if (!b) {
     fprintf(stderr, "built-in display id unknown\n");
-    log_line("light failed: built-in display id unknown");
+    log_line("light (%s) failed: built-in display id unknown", src);
     return 1;
   }
   printf("light id=%u err=%d\n", b, err);
-  log_line("light id=%u err=%d", b, err);
+  log_line("light (%s) id=%u err=%d", src, b, err);
   return err != kCGErrorSuccess;
 }
 
-static int cmd_toggle(void) { return find_builtin() ? cmd_dark() : cmd_light(); }
+// With the lid closed "not in the list" doesn't mean dark, so there's nothing to toggle.
+static int cmd_toggle(const char *src) {
+  if (lid_closed()) {
+    fprintf(stderr, "the lid is closed: nothing to toggle\n");
+    log_line("toggle (%s) ignored: lid closed", src);
+    return 1;
+  }
+  return find_builtin() ? cmd_dark(src) : cmd_light(src);
+}
 
 // --- watch ---
 
@@ -257,23 +306,25 @@ static void log_event(const char *msg, CGError err) { log_line("%s err=%d", msg,
 
 static void schedule_check(double sec);
 
-// Which displays are active — logged, so the reason for a decision is visible.
+// The displays the decision is made on — the online list, as find_builtin and
+// has_external use — logged so the reason for a decision is visible. “:inactive” marks
+// one that's online but not shown (e.g. the mirrored one in hardware mirroring).
 static void log_displays(void) {
   CGDirectDisplayID ids[MAX_DISPLAYS];
-  uint32_t n = 0;
+  uint32_t n = online(ids);
   char buf[512] = "";
-  CGGetActiveDisplayList(MAX_DISPLAYS, ids, &n);
   for (uint32_t i = 0; i < n; i++) {
     CGRect b = CGDisplayBounds(ids[i]);
-    char one[80];
-    snprintf(one, sizeof one, " %u:%.0fx%.0f:vendor=0x%x%s", ids[i], b.size.width,
+    char one[96];
+    snprintf(one, sizeof one, " %u:%.0fx%.0f:vendor=0x%x%s%s", ids[i], b.size.width,
              b.size.height, CGDisplayVendorNumber(ids[i]),
              CGDisplayIsBuiltin(ids[i]) ? ":builtin"
              : is_hardware(ids[i])      ? ""
-                                        : ":virtual");
+                                        : ":virtual",
+             CGDisplayIsActive(ids[i]) ? "" : ":inactive");
     strlcat(buf, one, sizeof buf);
   }
-  log_line("check: %u active —%s", n, buf);
+  log_line("check: %u online%s —%s", n, lid_closed() ? ", lid closed" : "", buf);
 }
 
 static void check(void *ctx) {
@@ -320,9 +371,11 @@ static void on_reconfig(CGDirectDisplayID id, CGDisplayChangeSummaryFlags flags,
 // Option together with anything else is plain Option and doesn't count.
 //
 // The tap only listens (kCGEventTapOptionListenOnly) and changes nothing; it needs the
-// Input Monitoring permission. The program is signed ad hoc, so after every rebuild
-// macOS asks for the permission again. A revoked permission doesn't stop an existing
-// tap, so every tap is checked against a fresh process (access_still_granted).
+// Input Monitoring permission. Signed ad hoc (the default), every rebuild is a new
+// program and macOS asks for the permission again; signed with a certificate
+// (`make cert`), the permission survives rebuilds. A revoked permission doesn't stop an
+// existing tap, so every tap is checked against a fresh process (access_still_granted).
+// With the lid closed the key does nothing (cmd_toggle).
 
 #define RIGHT_OPTION 61         // kVK_RightOption
 #define RIGHT_ALT_MASK 0x40     // NX_DEVICERALTKEYMASK: right Option is down
@@ -355,15 +408,19 @@ static const int exit_signals[] = {SIGTERM, SIGINT, SIGHUP, SIGQUIT};
 
 // Turn the built-in display on, retrying: CoreGraphics may refuse for a moment (sleep,
 // display reconfiguration). Used before exiting, when there's no later check to retry.
+// With the lid closed the panel can't be seen anyway — one attempt, so that it lights up
+// when the lid is opened, and no waiting (logout must not stall).
 static CGError restore_builtin(void) {
   CGError err = kCGErrorSuccess;
-  for (int i = 0; i < RESTORE_TRIES; i++) {
+  int tries = lid_closed() ? 1 : RESTORE_TRIES;
+  for (int i = 0; i < tries; i++) {
     if (find_builtin())
       return kCGErrorSuccess;
     err = light_once(true, NULL);
     if (err == kCGErrorSuccess)
       return err;
-    usleep(RESTORE_PAUSE_US);
+    if (i + 1 < tries)
+      usleep(RESTORE_PAUSE_US);
   }
   return err;
 }
@@ -389,7 +446,7 @@ static int access_still_granted(void) {
   posix_spawnattr_setsigdefault(&attr, &dflt);
   posix_spawnattr_setflags(&attr, POSIX_SPAWN_SETSIGDEF);
   pid_t pid;
-  int rc = posix_spawn(&pid, self, NULL, &attr, args, NULL);
+  int rc = posix_spawn(&pid, self, NULL, &attr, args, environ);
   posix_spawnattr_destroy(&attr);
   if (rc != 0)
     return 1;
@@ -425,9 +482,7 @@ static void tap_fire(void *ctx) {
       log_event("turning the built-in display on before restart", restore_builtin());
     exit(EXIT_NO_ACCESS);
   }
-  int rc = cmd_toggle();
-  log_event(find_builtin() ? "right Option — light" : "right Option — dark",
-            rc);
+  cmd_toggle("key");
 }
 
 static void on_tap(void) {
@@ -579,11 +634,11 @@ static int cmd_watch(void) {
 int main(int argc, char **argv) {
   const char *cmd = argc > 1 ? argv[1] : "status";
   if (!strcmp(cmd, "toggle"))
-    return cmd_toggle();
+    return cmd_toggle("cli");
   if (!strcmp(cmd, "dark"))
-    return cmd_dark();
+    return cmd_dark("cli");
   if (!strcmp(cmd, "light"))
-    return cmd_light();
+    return cmd_light("cli");
   if (!strcmp(cmd, "status"))
     return cmd_status();
   if (!strcmp(cmd, "version")) {

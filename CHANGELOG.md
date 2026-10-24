@@ -2,6 +2,24 @@
 
 Versions follow `MAJOR.MINOR.PATCH`: a fix bumps the patch, a new feature bumps the minor.
 
+## 0.8.2 — 2026-10-25
+
+Fixes from the second code review:
+
+- The saved built-in display ID moved from the temporary folder, which macOS clears of
+  files untouched for a few days, to `~/Library/Application Support/blackpane/`; a long
+  dark period no longer makes `blackpane light` fail with “id unknown”.
+- A closed lid is no longer taken for a dark display: the key and `toggle` do nothing
+  with the lid closed, and turning the display on before exit makes a single attempt
+  instead of retrying, so logout isn't held up.
+- One log line per action, with its source: `dark (key)`, `light (cli)`; a refused
+  action is logged as refused, not as the opposite action.
+- `check` log lines list the online displays the decision is made on, with `:inactive`
+  and `lid closed` marks.
+- The permission-check child gets the watcher's environment.
+- The keychain is queried only for goals that build the program.
+- `make uninstall` also removes `~/Library/Application Support/blackpane`.
+
 ## 0.8.1 — 2026-10-25
 
 - A failed `codesign` no longer leaves an unsigned build behind: the program is built and
