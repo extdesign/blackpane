@@ -143,7 +143,8 @@ not needed.
 **The Input Monitoring permission has to be removed by hand:** System Settings → Privacy
 & Security → Input Monitoring → select `blackpane` → “−”. It can't be scripted:
 `tccutil reset ListenEvent <id>` accepts only apps known to LaunchServices and fails for
-a command-line program with `No such bundle identifier … (OSStatus error -10814)`, and
+a command-line program with `No such bundle identifier … (OSStatus error -10814)` — signed
+with a certificate or not — and
 `tccutil reset ListenEvent` without an ID would reset the permission for every app.
 
 `make clean` removes the build folder.

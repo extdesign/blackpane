@@ -143,7 +143,7 @@ make uninstall
 Конфиденциальность и безопасность → Мониторинг ввода» → выбрать `blackpane` → «−».
 Командой это не сделать: `tccutil reset ListenEvent <id>` принимает только приложения,
 известные LaunchServices, и для консольной программы отвечает `No such bundle identifier
-… (OSStatus error -10814)`, а `tccutil reset ListenEvent` без идентификатора сбросил бы
+… (OSStatus error -10814)` — подписана она сертификатом или нет, — а `tccutil reset ListenEvent` без идентификатора сбросил бы
 разрешение у всех программ.
 
 `make clean` убирает папку сборки.
