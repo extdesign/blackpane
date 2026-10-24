@@ -29,10 +29,14 @@ SIGN_CHANGED := $(shell [ "$$(cat $(STAMP) 2>/dev/null)" = '$(SIGN)' ] || echo y
 
 all: $(BIN)
 
+# Built and signed as a temporary file, which replaces the program only after codesign
+# succeeds: a failed signature must not leave an unsigned build that the next run takes
+# for a finished one.
 $(BIN): src/$(NAME).m VERSION $(if $(SIGN_CHANGED),FORCE)
 	mkdir -p build
-	clang -O2 -Wall -DBLACKPANE_VERSION='"$(VERSION)"' -o $@ $< -framework AppKit
-	codesign --force --sign "$(SIGN)" --identifier $(LABEL) $@
+	clang -O2 -Wall -DBLACKPANE_VERSION='"$(VERSION)"' -o $@.tmp $< -framework AppKit
+	codesign --force --sign "$(SIGN)" --identifier $(LABEL) $@.tmp || { rm -f $@.tmp; exit 1; }
+	mv -f $@.tmp $@
 	@echo '$(SIGN)' > $(STAMP)
 	@echo "signed with: $(SIGN)"
 

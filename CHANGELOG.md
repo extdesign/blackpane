@@ -2,6 +2,13 @@
 
 Versions follow `MAJOR.MINOR.PATCH`: a fix bumps the patch, a new feature bumps the minor.
 
+## 0.8.1 — 2026-10-25
+
+- A failed `codesign` no longer leaves an unsigned build behind: the program is built and
+  signed as a temporary file that replaces the previous build only after signing
+  succeeds. Before, switching back to the previous `SIGN` took the unsigned build for a
+  finished one, and `make install` could install it.
+
 ## 0.8.0 — 2026-10-25
 
 - Commands `off` and `on` are renamed to `dark` (turn the built-in display off) and
