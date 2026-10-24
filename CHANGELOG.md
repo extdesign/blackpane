@@ -2,6 +2,15 @@
 
 Versions follow `MAJOR.MINOR.PATCH`: a fix bumps the patch, a new feature bumps the minor.
 
+## 0.7.0 — 2026-10-25
+
+- `make cert` creates a self-signed code-signing certificate (`blackpane-signing`,
+  10 years, login keychain); builds are then signed with it automatically, and the
+  Input Monitoring permission survives rebuilds. `make cert-remove` deletes it.
+  `make install SIGN="name"` signs with any other certificate. Without a certificate
+  builds stay ad hoc, as before.
+- Every build is signed with the identifier `extdesign.blackpane`.
+
 ## 0.6.1 — 2026-10-25
 
 - Turning Input Monitoring off now takes effect on the next tap. macOS keeps feeding an

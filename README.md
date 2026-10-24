@@ -84,11 +84,40 @@ Problems met while developing, and fixes:
 |---|---|---|
 | The key does nothing right after the permission was granted | macOS caches the permission answer for the lifetime of a process; a watcher started without permission doesn't see it | wait 10–20 seconds — without permission the watcher exits every 10 seconds and launchd starts it again; or restart it now: `launchctl kickstart -k gui/$(id -u)/extdesign.blackpane` |
 | System Settings says the app will be restarted, but nothing changes | that restart applies to apps; the watcher is a launchd agent, not an app | as above |
-| After a rebuild (`make install`) the key stopped working, the switch is still on | the program is signed locally (ad hoc); a rebuild is a new program for macOS, the old permission no longer matches | turn the `blackpane` switch off and on; if that doesn't help, remove `blackpane` with “−” and add `~/.local/bin/blackpane` with “+” |
+| After a rebuild (`make install`) the key stopped working, the switch is still on | the program is signed locally (ad hoc); a rebuild is a new program for macOS, the old permission no longer matches | remove `blackpane` with “−” and add `~/.local/bin/blackpane` with “+” (turning the switch off and on is not enough); to avoid this, see “If you rebuild often” |
 | The log says `no Input Monitoring permission — restarting every 10 s until granted` | the permission isn't granted (or no longer matches after a rebuild); the line is written once, later restarts stay silent | grant it as in step 4; the log then says `Input Monitoring permission granted` |
 | The log says `watching the right Option key`, but the key does nothing | an event tap created before the permission was granted gets no events | `launchctl kickstart -k gui/$(id -u)/extdesign.blackpane` |
 | The key doesn't work on the lock screen | macOS doesn't pass key presses to apps while the screen is locked | by design; unplugging the monitor still brings the display back |
 | The permission was turned off, but the next tap… | macOS keeps feeding a tap created while the permission was on | since 0.6.1 every tap is checked by a fresh process: the first tap after the permission is turned off leaves the display alone, the log says `Input Monitoring permission revoked — key ignored, restarting`, and the watcher restarts without permission |
+
+## If you rebuild often: keep the permission
+
+Not needed for a normal install — skip this if you update blackpane now and then.
+
+By default the program is signed locally (ad hoc). macOS then ties the Input Monitoring
+permission to the exact build, so every rebuild needs it granted again. Apps from the
+App Store or from developers keep their permissions across updates because they're
+signed with a certificate: macOS remembers “this identifier from this certificate”.
+blackpane can do the same with a certificate you make yourself, for free:
+
+```bash
+make cert
+```
+
+It creates a self-signed code-signing certificate `blackpane-signing`, valid 10 years,
+in your login keychain, and asks for your login password once — to trust it for code
+signing. From then on `make install` signs with it automatically (the build prints
+`signed with: blackpane-signing`). Grant the permission one last time (“−”, then “+”, as
+after any rebuild); later rebuilds keep it.
+
+The certificate is used only to sign blackpane on this Mac. To remove it:
+
+```bash
+make cert-remove
+```
+
+The next build is signed ad hoc again. You can also sign with any other code-signing
+certificate you have: `make install SIGN="certificate name"`.
 
 ## Uninstall
 

@@ -8,9 +8,19 @@ TMP     := $(shell getconf DARWIN_USER_TEMP_DIR)
 STATE   := $(TMP)$(NAME).builtin-id $(TMP)$(NAME).no-access
 DOMAIN  := gui/$(shell id -u)
 
+# Signing. By default ad hoc ("-"): every rebuild is a new program for macOS and the
+# Input Monitoring permission has to be granted again. With a code-signing certificate
+# (`make cert` creates one) the permission survives rebuilds. If the certificate CERT
+# is in the keychain it's used automatically; SIGN=... overrides.
+CERT    := blackpane-signing
+KEYCHAIN := $(HOME)/Library/Keychains/login.keychain-db
+SIGN    ?= $(shell security find-identity -p codesigning 2>/dev/null | grep -q '"$(CERT)"' && echo $(CERT) || echo -)
+
 $(BIN): src/$(NAME).m VERSION
 	mkdir -p build
 	clang -O2 -Wall -DBLACKPANE_VERSION='"$(VERSION)"' -o $@ $< -framework AppKit
+	codesign --force --sign "$(SIGN)" --identifier $(LABEL) $@
+	@echo "signed with: $(SIGN)"
 
 install: $(BIN)
 	mkdir -p $(PREFIX)
@@ -34,7 +44,33 @@ uninstall:
 	@echo "Remove blackpane from System Settings → Privacy & Security → Input Monitoring (“−”)."
 	@echo "The log ~/Library/Logs/blackpane.log is kept; delete it by hand if not needed."
 
+# A self-signed code-signing certificate, valid 10 years, in the login keychain. It's
+# used only to sign blackpane on this Mac. macOS asks for the login password once — to
+# trust the certificate for code signing. The key and certificate files are created in a
+# temporary folder and deleted.
+cert:
+	@if security find-identity -p codesigning 2>/dev/null | grep -q '"$(CERT)"'; then \
+	  echo "$(CERT) is already in the keychain"; exit 0; fi; \
+	d=$$(mktemp -d) && trap 'rm -rf "$$d"' EXIT && \
+	/usr/bin/openssl req -x509 -newkey rsa:2048 -nodes -days 3650 -subj "/CN=$(CERT)" \
+	  -addext "basicConstraints=critical,CA:false" \
+	  -addext "keyUsage=critical,digitalSignature" \
+	  -addext "extendedKeyUsage=critical,codeSigning" \
+	  -keyout "$$d/key.pem" -out "$$d/cert.pem" 2>/dev/null && \
+	/usr/bin/openssl pkcs12 -export -inkey "$$d/key.pem" -in "$$d/cert.pem" \
+	  -keypbe PBE-SHA1-3DES -certpbe PBE-SHA1-3DES -macalg sha1 \
+	  -passout pass:$(CERT) -out "$$d/id.p12" && \
+	security import "$$d/id.p12" -k "$(KEYCHAIN)" -P $(CERT) -T /usr/bin/codesign && \
+	security add-trusted-cert -r trustRoot -p codeSign -k "$(KEYCHAIN)" "$$d/cert.pem" && \
+	echo "$(CERT) created; next \`make install\` signs with it"
+	rm -f $(BIN)
+
+# Removes the certificate and its key. The next build is signed ad hoc again.
+cert-remove:
+	security delete-identity -c $(CERT) "$(KEYCHAIN)"
+	rm -f $(BIN)
+
 clean:
 	rm -rf build
 
-.PHONY: install uninstall clean
+.PHONY: install uninstall cert cert-remove clean
