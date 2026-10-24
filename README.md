@@ -1,0 +1,244 @@
+# blackpane
+
+[Описание на русском](README.ru.md)
+
+Turns a MacBook's built-in display off and on while the lid stays open — like a
+blackout curtain on a window: the window is still there, no light gets through. Useful
+when you work on an external monitor but don't want to close the lid: Touch ID stays
+within reach, the built-in panel stays dark.
+
+- **A single tap of the right Option key** turns the built-in display off; another tap
+  turns it back on.
+- **When no external monitor is left** (cable unplugged, including while asleep with the
+  lid closed), the built-in display comes back on by itself.
+- **Without an external monitor** the built-in display can't be turned off.
+
+Developed and tested on a MacBook Pro 16″ (M1 Pro) with macOS 27.0.1 (26A434).
+
+```text
+src/blackpane.m                        the program
+launchd/extdesign.blackpane.plist.in   launchd agent template
+Makefile                               build, install, uninstall
+build/                                 build output (not in git)
+```
+
+## Install
+
+1. Install Xcode Command Line Tools, if not yet:
+
+   ```bash
+   xcode-select --install
+   ```
+
+2. Build and install, from the project folder:
+
+   ```bash
+   make install
+   ```
+
+   This installs:
+
+   | What | Where |
+   |---|---|
+   | the program | `~/.local/bin/blackpane` |
+   | the launchd agent (starts at login, restarted if it exits) | `~/Library/LaunchAgents/extdesign.blackpane.plist` |
+
+   The agent starts right away, and from then on at every login: launchd loads the
+   agents from your `~/Library/LaunchAgents` at login and starts those marked
+   `RunAtLoad`. It runs for your user only. `make install` again after a change
+   overwrites both files and restarts the agent — nothing piles up.
+
+3. Grant **Input Monitoring** permission. Right after the start macOS shows a request
+   for `blackpane`; click it through to System Settings → Privacy & Security → Input
+   Monitoring and turn `blackpane` on. If no request appeared, open that page yourself:
+   `blackpane` is already in the list, turned off. If it's not there, click “+” and choose
+   `~/.local/bin/blackpane` (`.local` is hidden — press `Cmd+Shift+.` in the file dialog).
+
+   Nothing needs restarting: the watcher picks the permission up within 10–20 seconds
+   (see “Permission troubleshooting” for why).
+
+4. Check: a single tap of the right Option turns the built-in display off, another tap
+   turns it on. The log shows `watching the right Option key`:
+
+   ```bash
+   tail ~/Library/Logs/blackpane.log
+   ```
+
+Without the permission only the key doesn't work; restoring the display when the monitor
+is unplugged works anyway.
+
+## Permission troubleshooting
+
+Problems met while developing, and fixes:
+
+| Symptom | Why | Fix |
+|---|---|---|
+| The key does nothing right after the permission was granted | macOS caches the permission answer for the lifetime of a process; a watcher started without permission doesn't see it | wait 10–20 seconds — without permission the watcher exits every 10 seconds and launchd starts it again; or restart it now: `launchctl kickstart -k gui/$(id -u)/extdesign.blackpane` |
+| System Settings says the app will be restarted, but nothing changes | that restart applies to apps; the watcher is a launchd agent, not an app | as above |
+| After a rebuild (`make install`) the key stopped working, the switch is still on | the program is signed locally (ad hoc); a rebuild is a new program for macOS, the old permission no longer matches | turn the `blackpane` switch off and on; if that doesn't help, remove `blackpane` with “−” and add `~/.local/bin/blackpane` with “+” |
+| The log says `no Input Monitoring permission — restarting every 10 s until granted` | the permission isn't granted (or no longer matches after a rebuild); the line is written once, later restarts stay silent | grant it as in step 3; the log then says `Input Monitoring permission granted` |
+| The log says `watching the right Option key`, but the key does nothing | an event tap created before the permission was granted gets no events | `launchctl kickstart -k gui/$(id -u)/extdesign.blackpane` |
+| The key doesn't work on the lock screen | macOS doesn't pass key presses to apps while the screen is locked | by design; unplugging the monitor still brings the display back |
+
+## Uninstall
+
+From the project folder:
+
+```bash
+make uninstall
+```
+
+It stops the agent (the watcher turns the built-in display on as it exits), runs
+`blackpane on` in case the watcher wasn't running, and removes everything blackpane
+leaves behind:
+
+| What | Where |
+|---|---|
+| the launchd agent | `~/Library/LaunchAgents/extdesign.blackpane.plist` |
+| the program | `~/.local/bin/blackpane` |
+| the saved built-in display ID and the “no permission” mark | `blackpane.builtin-id`, `blackpane.no-access` in `getconf DARWIN_USER_TEMP_DIR` |
+
+The log `~/Library/Logs/blackpane.log` is kept for later analysis; delete it by hand if
+not needed.
+
+**The Input Monitoring permission has to be removed by hand:** System Settings → Privacy
+& Security → Input Monitoring → select `blackpane` → “−”. It can't be scripted:
+`tccutil reset ListenEvent <id>` accepts only apps known to LaunchServices and fails for
+a command-line program with `No such bundle identifier … (OSStatus error -10814)`, and
+`tccutil reset ListenEvent` without an ID would reset the permission for every app.
+
+`make clean` removes the build folder.
+
+## Commands
+
+```text
+blackpane toggle    turn off if on, on if off
+blackpane off       turn off — only if an external monitor is connected
+blackpane on        turn on
+blackpane status    displays macOS sees
+blackpane version   version
+blackpane watch     the watcher; started by the launchd agent
+```
+
+## Log
+
+`~/Library/Logs/blackpane.log` — a plain text file. In Console.app it's under “Log
+Reports” as `blackpane.log`, with the whole history; in Terminal — `tail` or `less`.
+
+What gets written: watcher start and stop, every `on`/`off` (from the key, the watcher or
+the command line) with its result, refusals, display checks with the list of active
+displays, permission state. Errors come with a non-zero `err=`. Each line carries the
+version and the process ID:
+
+```text
+2026-10-25 00:42:10 [0.6.0 4512] watcher 0.6.0 started err=0
+2026-10-25 00:42:10 [0.6.0 4512] watching the right Option key err=0
+2026-10-25 00:42:31 [0.6.0 4512] off id=1 err=0
+2026-10-25 00:42:31 [0.6.0 4512] right Option — built-in display off err=0
+```
+
+It's a few lines a day, so the file is never rotated — a megabyte takes years. The
+watcher without permission restarts every 10 seconds but writes about it only once.
+
+## Important
+
+By itself the built-in display stays off through screen lock, sleep and logout — only a
+reboot resets it. The watcher is what brings it back:
+
+- **External monitor gone** — the watcher turns the built-in display on.
+- **Watcher stopped** (logout, `launchctl bootout`, `make install`, `make uninstall`,
+  `kill` with SIGTERM, SIGINT, SIGHUP or SIGQUIT) — it turns the built-in display on
+  before exiting, so the login window appears on it too.
+- **Watcher killed with `kill -9` or crashed** — this can't be caught. launchd starts the
+  watcher again (`KeepAlive` restarts it after any exit that isn't clean), and on start
+  it turns the built-in display on if no external monitor is connected.
+
+A watcher that has the permission runs without polling anything and is never restarted;
+launchd restarts it only after a crash, `kill -9`, or the “no permission” exit.
+
+The one case left: the agent is gone for good (its plist removed by hand without
+`make uninstall`) while the display is off and the external monitor gets unplugged. Then
+the Mac has no display — reboot; after a reboot the display always comes back.
+
+## The key
+
+The watcher listens to modifier keys and changes nothing.
+
+- The right Option is told apart from the left one by key code (61) and the
+  `NX_DEVICERALTKEYMASK` flag.
+- Only a **single short** tap counts: Option together with another key, holding it
+  longer than 0.5 s, or a double tap (second tap within 0.35 s) leave the display alone.
+  A double tap is left to other apps that react to it.
+- That's why the display switches 0.35 s after the tap: the watcher waits to see whether
+  a second tap follows.
+- While the screen is locked, macOS doesn't pass key presses to apps — the key doesn't
+  work there.
+
+## How it works
+
+The display is turned off with the private `CGSConfigureDisplayEnabled` call (SkyLight,
+reachable through CoreGraphics) inside a `CGBeginDisplayConfiguration` …
+`CGCompleteDisplayConfiguration` transaction with `kCGConfigureForSession`. A private API
+may break in a future macOS — then `off` returns an error and the display stays on.
+
+A turned-off display disappears from the display list, so its ID is kept in
+`blackpane.builtin-id` in the user's temporary folder (`getconf DARWIN_USER_TEMP_DIR`).
+Without the file, ID 1 is used — that's the built-in display on Apple Silicon.
+
+The watcher (`watch`) is a process without windows, Dock icon or menu. It sleeps waiting
+for events and uses no CPU. Memory: about 9–10 MB physical footprint (`footprint <pid>`);
+`ps` shows about 35 MB RSS, mostly shared system frameworks.
+
+## What testing showed
+
+Without the watcher:
+
+| With the built-in display off | Built-in display |
+|---|---|
+| `off`, then the process exits | stays off — no process needs to hold it |
+| `on` from a separate run | turns on |
+| Screen lock, sleep, displays asleep | stays off |
+| Lid closed with a monitor connected | nothing flickers: there's nothing to switch to |
+| Monitor unplugged (lid open or closed) | **stays off** — the Mac has no display |
+| Logout | **stays off**, the login window is on the external monitor only |
+| Reboot | turns on |
+
+`kCGConfigureForSession` lasts until the end of the WindowServer session, which lives
+until reboot: logging out doesn't bring the display back. Hence the watcher.
+
+With the watcher, unplugging the monitor turns the built-in display on within about two
+seconds; with the lid closed it turns on before the Mac goes to sleep.
+
+Things that weren't obvious:
+
+- **The watcher is an `NSApplication`.** WindowServer delivers
+  `CGDisplayRegisterReconfigurationCallback` events only to a process registered as an
+  application; a command-line tool running `CFRunLoopRun` gets none.
+- **The virtual display doesn't count.** When no monitor is left, macOS creates a virtual
+  one — 1×1 or 1920×1080, vendor `0x756e6b6e` (`unkn`). A real one has an IOKit service
+  (`CGDisplayIOServicePort`) or a 16-bit vendor number.
+- **The key is caught directly, not remapped.** The alternative — `hidutil` turns the
+  right Option into F19 and F19 is registered with `RegisterEventHotKey` — needs no
+  permission, but `hidutil` has a single system-wide remapping list and `--set` replaces
+  it entirely (breaking other remappings), the F-key may already be taken on another Mac,
+  and a remapped Option no longer acts as Option for other apps.
+- **The permission answer is cached per process.** Without Input Monitoring an event tap
+  is still created, but no events arrive — not even after the permission is granted;
+  macOS remembers the answer for the lifetime of the process. So without permission the
+  watcher exits after 10 seconds with an error code and launchd starts it again; a clean
+  exit (code 0, e.g. on logout) is not restarted.
+- **launchd keeps the plist in memory.** `launchctl kickstart` restarts an agent with its
+  old arguments; a changed plist is picked up only via `bootout` and `bootstrap`.
+  `bootout` returns before the agent is unloaded — `make install` waits, otherwise
+  `bootstrap` fails with “5: Input/output error”.
+
+## Similar tools
+
+[BetterDisplay](https://github.com/waydabber/BetterDisplay) and
+[blackoutd](https://github.com/toobuntu/blackoutd) do the same with the same private call.
+Both are much larger: in BetterDisplay disconnecting a display is part of a big paid
+toolkit (not in the free version); blackoutd is about 3,000 lines of daemon around it
+(menu bar icon, re-applying after sleep, recovering a stalled external monitor).
+blackpane is one program of about 400 lines with no menu and no settings. Its code is
+written from scratch; the public documentation of these projects helped when analysing
+problems along the way.

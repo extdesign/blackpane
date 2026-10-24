@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- blackpane watcher: no external monitor left — turn the built-in display on;
+     a single right Option tap — turn it off or on. Sleeps waiting for events.
+     Installed by `make install`, @HOME@ is replaced with the home folder.
+     Log: ~/Library/Logs/blackpane.log. -->
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>extdesign.blackpane</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>@HOME@/.local/bin/blackpane</string>
+		<string>watch</string>
+	</array>
+	<key>RunAtLoad</key>
+	<true/>
+	<!-- Restart only after an error exit or a crash (kill -9 included): without the
+	     Input Monitoring permission the watcher exits with code 75 so that a new process
+	     asks for the permission again. A clean exit on SIGTERM (logout, bootout) is
+	     code 0 and is not restarted. -->
+	<key>KeepAlive</key>
+	<dict>
+		<key>SuccessfulExit</key>
+		<false/>
+	</dict>
+</dict>
+</plist>

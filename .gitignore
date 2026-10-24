@@ -1,0 +1,33 @@
+# Build output
+/build/
+*.o
+*.dSYM/
+
+# macOS
+.DS_Store
+._*
+.AppleDouble
+.LSOverride
+.Spotlight-V100
+.Trashes
+.fseventsd
+.DocumentRevisions-V100
+.TemporaryItems
+
+# Windows
+Thumbs.db
+ehthumbs.db
+desktop.ini
+$RECYCLE.BIN/
+
+# Linux
+*~
+.directory
+.nfs*
+.Trash-*
+
+# Editors
+.vscode/
+.idea/
+*.swp
+*.swo
