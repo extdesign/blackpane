@@ -30,7 +30,16 @@ build/                                 build output (not in git)
    xcode-select --install
    ```
 
-2. Build and install, from the project folder:
+2. Get the source:
+
+   ```bash
+   git clone https://github.com/extdesign/blackpane.git
+   cd blackpane
+   ```
+
+3. Build and install. There's no separate build step: `make install` compiles the
+   program into `build/` first (and recompiles it whenever the source or `VERSION`
+   changed), then installs it. `make` alone only builds.
 
    ```bash
    make install
@@ -48,7 +57,7 @@ build/                                 build output (not in git)
    `RunAtLoad`. It runs for your user only. `make install` again after a change
    overwrites both files and restarts the agent — nothing piles up.
 
-3. Grant **Input Monitoring** permission. Right after the start macOS shows a request
+4. Grant **Input Monitoring** permission. Right after the start macOS shows a request
    for `blackpane`; click it through to System Settings → Privacy & Security → Input
    Monitoring and turn `blackpane` on. If no request appeared, open that page yourself:
    `blackpane` is already in the list, turned off. If it's not there, click “+” and choose
@@ -57,7 +66,7 @@ build/                                 build output (not in git)
    Nothing needs restarting: the watcher picks the permission up within 10–20 seconds
    (see “Permission troubleshooting” for why).
 
-4. Check: a single tap of the right Option turns the built-in display off, another tap
+5. Check: a single tap of the right Option turns the built-in display off, another tap
    turns it on. The log shows `watching the right Option key`:
 
    ```bash
@@ -76,7 +85,7 @@ Problems met while developing, and fixes:
 | The key does nothing right after the permission was granted | macOS caches the permission answer for the lifetime of a process; a watcher started without permission doesn't see it | wait 10–20 seconds — without permission the watcher exits every 10 seconds and launchd starts it again; or restart it now: `launchctl kickstart -k gui/$(id -u)/extdesign.blackpane` |
 | System Settings says the app will be restarted, but nothing changes | that restart applies to apps; the watcher is a launchd agent, not an app | as above |
 | After a rebuild (`make install`) the key stopped working, the switch is still on | the program is signed locally (ad hoc); a rebuild is a new program for macOS, the old permission no longer matches | turn the `blackpane` switch off and on; if that doesn't help, remove `blackpane` with “−” and add `~/.local/bin/blackpane` with “+” |
-| The log says `no Input Monitoring permission — restarting every 10 s until granted` | the permission isn't granted (or no longer matches after a rebuild); the line is written once, later restarts stay silent | grant it as in step 3; the log then says `Input Monitoring permission granted` |
+| The log says `no Input Monitoring permission — restarting every 10 s until granted` | the permission isn't granted (or no longer matches after a rebuild); the line is written once, later restarts stay silent | grant it as in step 4; the log then says `Input Monitoring permission granted` |
 | The log says `watching the right Option key`, but the key does nothing | an event tap created before the permission was granted gets no events | `launchctl kickstart -k gui/$(id -u)/extdesign.blackpane` |
 | The key doesn't work on the lock screen | macOS doesn't pass key presses to apps while the screen is locked | by design; unplugging the monitor still brings the display back |
 
