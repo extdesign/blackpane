@@ -1,6 +1,13 @@
 # blackpane
 
-[Описание на русском](README.ru.md)
+**English** | [Русский](README.ru.md)
+
+[![License: MIT](https://img.shields.io/github/license/extdesign/blackpane)](LICENSE)
+[![Version](https://img.shields.io/github/v/tag/extdesign/blackpane?label=version&sort=semver)](https://github.com/extdesign/blackpane/tags)
+[![macOS](https://img.shields.io/badge/macOS-27-black?logo=apple)](#blackpane)
+[![Apple Silicon](https://img.shields.io/badge/Apple%20Silicon-M1%20Pro%20tested-black?logo=apple)](#blackpane)
+[![Language](https://img.shields.io/github/languages/top/extdesign/blackpane)](src/blackpane.m)
+[![Last commit](https://img.shields.io/github/last-commit/extdesign/blackpane)](https://github.com/extdesign/blackpane/commits/master)
 
 Turns a MacBook's built-in display off and on while the lid stays open — like a
 blackout curtain on a window: the window is still there, no light gets through. Useful
@@ -21,6 +28,21 @@ launchd/extdesign.blackpane.plist.in   launchd agent template
 Makefile                               build, install, uninstall
 build/                                 build output (not in git)
 ```
+
+## Contents
+
+- [Install](#install)
+- [Permission troubleshooting](#permission-troubleshooting)
+- [If you rebuild often: keep the permission](#if-you-rebuild-often-keep-the-permission)
+- [Uninstall](#uninstall)
+- [Commands](#commands)
+- [Log](#log)
+- [Important](#important)
+- [The key](#the-key)
+- [How it works](#how-it-works)
+- [What testing showed](#what-testing-showed)
+- [Similar tools](#similar-tools)
+- [License](#license)
 
 ## Install
 

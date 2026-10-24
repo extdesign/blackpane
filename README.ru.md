@@ -1,6 +1,13 @@
 # blackpane
 
-[English](README.md)
+[English](README.md) | **Русский**
+
+[![License: MIT](https://img.shields.io/github/license/extdesign/blackpane?label=лицензия)](LICENSE)
+[![Version](https://img.shields.io/github/v/tag/extdesign/blackpane?label=версия&sort=semver)](https://github.com/extdesign/blackpane/tags)
+[![macOS](https://img.shields.io/badge/macOS-27-black?logo=apple)](#blackpane)
+[![Apple Silicon](https://img.shields.io/badge/Apple%20Silicon-проверено%20на%20M1%20Pro-black?logo=apple)](#blackpane)
+[![Language](https://img.shields.io/github/languages/top/extdesign/blackpane)](src/blackpane.m)
+[![Last commit](https://img.shields.io/github/last-commit/extdesign/blackpane?label=последний%20коммит)](https://github.com/extdesign/blackpane/commits/master)
 
 Выключает и включает встроенный экран MacBook при открытой крышке — как штора блэкаут
 на окне: окно на месте, свет не проходит. Удобно, когда работаешь на внешнем мониторе,
@@ -19,6 +26,21 @@ launchd/extdesign.blackpane.plist.in   шаблон агента launchd
 Makefile                               сборка, установка, удаление
 build/                                 результат сборки (не в git)
 ```
+
+## Содержание
+
+- [Установка](#установка)
+- [Неполадки с разрешением](#неполадки-с-разрешением)
+- [Если часто пересобираете: сохранить разрешение](#если-часто-пересобираете-сохранить-разрешение)
+- [Удаление](#удаление)
+- [Команды](#команды)
+- [Журнал](#журнал)
+- [Важно](#важно)
+- [Клавиша](#клавиша)
+- [Как устроено](#как-устроено)
+- [Что выяснили проверками](#что-выяснили-проверками)
+- [Аналоги](#аналоги)
+- [Лицензия](#лицензия)
 
 ## Установка
 
