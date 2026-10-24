@@ -5,6 +5,7 @@
 //   blackpane on        turn on
 //   blackpane status    displays macOS sees
 //   blackpane version   version
+//   blackpane access    is Input Monitoring granted (exit code 0 — yes)
 //   blackpane watch     watcher for the launchd agent: no external monitor left — turn
 //                       the built-in display on; a single right Option tap — toggle
 //
@@ -23,11 +24,14 @@
 #import <AppKit/AppKit.h>
 #include <dispatch/dispatch.h>
 #include <limits.h>
+#include <mach-o/dyld.h>
+#include <spawn.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <sys/wait.h>
 #include <unistd.h>
 
 // The Makefile passes the version from the VERSION file; "dev" marks a build made
@@ -295,7 +299,8 @@ static void on_reconfig(CGDirectDisplayID id, CGDisplayChangeSummaryFlags flags,
 //
 // The tap only listens (kCGEventTapOptionListenOnly) and changes nothing; it needs the
 // Input Monitoring permission. The program is signed ad hoc, so after every rebuild
-// macOS asks for the permission again.
+// macOS asks for the permission again. A revoked permission doesn't stop an existing
+// tap, so every tap is checked against a fresh process (access_still_granted).
 
 #define RIGHT_OPTION 61         // kVK_RightOption
 #define RIGHT_ALT_MASK 0x40     // NX_DEVICERALTKEYMASK: right Option is down
@@ -311,10 +316,36 @@ static CFAbsoluteTime ropt_since;
 static unsigned tap_gen;        // ID of the pending toggle; any other ID — cancelled
 static int tap_waiting;
 
+// Is the permission still granted? macOS keeps feeding an existing tap after the
+// permission is revoked, and this process's own answer is cached — so ask a fresh
+// process: `blackpane access`. Only on a tap, a few milliseconds. If the check itself
+// can't run, assume granted.
+static int access_still_granted(void) {
+  char self[PATH_MAX];
+  uint32_t size = sizeof self;
+  if (_NSGetExecutablePath(self, &size) != 0)
+    return 1;
+  char *args[] = {self, "access", NULL};
+  pid_t pid;
+  int status;
+  if (posix_spawn(&pid, self, NULL, NULL, args, NULL) != 0)
+    return 1;
+  if (waitpid(pid, &status, 0) != pid || !WIFEXITED(status))
+    return 1;
+  return WEXITSTATUS(status) == 0;
+}
+
 static void tap_fire(void *ctx) {
   if ((unsigned)(uintptr_t)ctx != tap_gen || !tap_waiting)
     return;
   tap_waiting = 0;
+  if (!access_still_granted()) {
+    // Revoked: leave the display alone and restart without permission — the new
+    // watcher waits for it like after a fresh install.
+    CGEventTapEnable(tap, false);
+    log_line("Input Monitoring permission revoked — key ignored, restarting");
+    exit(EXIT_NO_ACCESS);
+  }
   int rc = cmd_toggle();
   log_event(find_builtin() ? "right Option — built-in display on"
                            : "right Option — built-in display off",
@@ -469,8 +500,13 @@ int main(int argc, char **argv) {
     puts(BLACKPANE_VERSION);
     return 0;
   }
+  if (!strcmp(cmd, "access")) {
+    int ok = CGPreflightListenEventAccess();
+    puts(ok ? "Input Monitoring: granted" : "Input Monitoring: not granted");
+    return ok ? 0 : 1;
+  }
   if (!strcmp(cmd, "watch"))
     return cmd_watch();
-  fprintf(stderr, "usage: blackpane [toggle|off|on|status|version|watch]\n");
+  fprintf(stderr, "usage: blackpane [toggle|off|on|status|version|access|watch]\n");
   return 2;
 }

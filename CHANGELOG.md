@@ -2,6 +2,14 @@
 
 Versions follow `MAJOR.MINOR.PATCH`: a fix bumps the patch, a new feature bumps the minor.
 
+## 0.6.1 — 2026-10-25
+
+- Turning Input Monitoring off now takes effect on the next tap. macOS keeps feeding an
+  event tap created while the permission was on, and the watcher's own answer is cached,
+  so every tap is checked by a fresh process (`blackpane access`). If the permission is
+  gone, the tap leaves the display alone and the watcher restarts without permission.
+- New command `access`: exit code 0 if Input Monitoring is granted.
+
 ## 0.6.0 — 2026-10-25
 
 - The log is a plain file, `~/Library/Logs/blackpane.log`, instead of the unified system

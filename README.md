@@ -88,6 +88,7 @@ Problems met while developing, and fixes:
 | The log says `no Input Monitoring permission — restarting every 10 s until granted` | the permission isn't granted (or no longer matches after a rebuild); the line is written once, later restarts stay silent | grant it as in step 4; the log then says `Input Monitoring permission granted` |
 | The log says `watching the right Option key`, but the key does nothing | an event tap created before the permission was granted gets no events | `launchctl kickstart -k gui/$(id -u)/extdesign.blackpane` |
 | The key doesn't work on the lock screen | macOS doesn't pass key presses to apps while the screen is locked | by design; unplugging the monitor still brings the display back |
+| The permission was turned off, but the next tap… | macOS keeps feeding a tap created while the permission was on | since 0.6.1 every tap is checked by a fresh process: the first tap after the permission is turned off leaves the display alone, the log says `Input Monitoring permission revoked — key ignored, restarting`, and the watcher restarts without permission |
 
 ## Uninstall
 
@@ -126,8 +127,12 @@ blackpane off       turn off — only if an external monitor is connected
 blackpane on        turn on
 blackpane status    displays macOS sees
 blackpane version   version
+blackpane access    is Input Monitoring granted (exit code 0 — yes)
 blackpane watch     the watcher; started by the launchd agent
 ```
+
+`blackpane access` run from Terminal reports Terminal's permission, not blackpane's:
+macOS checks the app the program was launched from. The watcher runs it for itself.
 
 ## Log
 
