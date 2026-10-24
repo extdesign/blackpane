@@ -1,0 +1,43 @@
+# Builds blackpane on a macOS runner for every push to master and every pull request:
+# compiles with warnings as errors, runs the static analyser, builds with the Makefile
+# (ad hoc signature) and checks that the program starts and reports the version from
+# VERSION. Displays, keys and permissions are not touched — a runner has none to test.
+
+name: build
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-latest
+    timeout-minutes: 10
+    steps:
+      # Pinned to a commit, not a movable tag: v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: Compile with warnings as errors
+        run: clang -O2 -Wall -Werror -fsyntax-only src/blackpane.m
+
+      - name: Static analysis
+        run: clang --analyze -Xclang -analyzer-werror src/blackpane.m -o /dev/null
+
+      - name: Build
+        run: make SIGN=-
+
+      - name: Check the program
+        run: |
+          test "$(build/blackpane version)" = "$(cat VERSION)"
+          build/blackpane bogus || test $? -eq 2
+          codesign --verify --strict build/blackpane
+
+      - name: Check the launchd agent template
+        run: plutil -lint launchd/extdesign.blackpane.plist.in

@@ -2,6 +2,7 @@
 
 [English](README.md) | **Русский**
 
+[![Build](https://github.com/extdesign/blackpane/actions/workflows/build.yml/badge.svg)](https://github.com/extdesign/blackpane/actions/workflows/build.yml)
 [![License: MIT](https://img.shields.io/github/license/extdesign/blackpane?label=лицензия)](LICENSE)
 [![Version](https://img.shields.io/github/v/tag/extdesign/blackpane?label=версия&sort=semver)](https://github.com/extdesign/blackpane/tags)
 [![macOS](https://img.shields.io/badge/macOS-27-black?logo=apple)](#blackpane)
