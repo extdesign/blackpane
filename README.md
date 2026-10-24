@@ -88,7 +88,7 @@ Problems met while developing, and fixes:
 | The log says `no Input Monitoring permission — restarting every 10 s until granted` | the permission isn't granted (or no longer matches after a rebuild); the line is written once, later restarts stay silent | grant it as in step 4; the log then says `Input Monitoring permission granted` |
 | The log says `watching the right Option key`, but the key does nothing | an event tap created before the permission was granted gets no events | `launchctl kickstart -k gui/$(id -u)/extdesign.blackpane` |
 | The key doesn't work on the lock screen | macOS doesn't pass key presses to apps while the screen is locked | by design; unplugging the monitor still brings the display back |
-| The permission was turned off, but the next tap… | macOS keeps feeding a tap created while the permission was on | since 0.6.1 every tap is checked by a fresh process: the first tap after the permission is turned off leaves the display alone, the log says `Input Monitoring permission revoked — key ignored, restarting`, and the watcher restarts without permission |
+| The permission was turned off, but the next tap… | macOS keeps feeding a tap created while the permission was on | since 0.6.1 every tap is checked by a fresh process: the first tap after the permission is turned off doesn't switch the display, the log says `Input Monitoring permission revoked — key ignored, restarting`; if the built-in display was off, it's turned on (the key won't work any more), and the watcher restarts without permission |
 
 ## If you rebuild often: keep the permission
 
@@ -108,7 +108,8 @@ It creates a self-signed code-signing certificate `blackpane-signing`, valid 10 
 in your login keychain, and asks for your login password once — to trust it for code
 signing. From then on `make install` signs with it automatically (the build prints
 `signed with: blackpane-signing`). Grant the permission one last time (“−”, then “+”, as
-after any rebuild); later rebuilds keep it.
+after any rebuild); later rebuilds keep it. If `make cert` was interrupted (say, the
+password dialog was cancelled), run it again: it trusts the already imported certificate.
 
 The certificate is used only to sign blackpane on this Mac. To remove it:
 
@@ -117,7 +118,9 @@ make cert-remove
 ```
 
 The next build is signed ad hoc again. You can also sign with any other code-signing
-certificate you have: `make install SIGN="certificate name"`.
+certificate you have: `make install SIGN="certificate name"` — the program is re-signed
+even if nothing else changed. A `SIGN` variable in your environment is ignored; only
+the one on the `make` command line counts.
 
 ## Uninstall
 
@@ -206,15 +209,17 @@ the Mac has no display — reboot; after a reboot the display always comes back.
 
 ## The key
 
-The watcher listens to modifier keys and changes nothing.
+The watcher listens to keys, mouse buttons and scrolling and changes nothing.
 
 - The right Option is told apart from the left one by key code (61) and the
   `NX_DEVICERALTKEYMASK` flag.
-- Only a **single short** tap counts: Option together with another key, holding it
-  longer than 0.5 s, or a double tap (second tap within 0.35 s) leave the display alone.
-  A double tap is left to other apps that react to it.
+- Only a **single short** tap counts. The display is left alone when the right Option
+  goes together with another key, a mouse click or scroll (Option-click), or with
+  another modifier already held (Command, Shift, Control, Fn, left Option); when it's
+  held longer than 0.5 s; and on a double tap — a second press starting within 0.35 s of
+  the first release. A double tap is left to other apps that react to it.
 - That's why the display switches 0.35 s after the tap: the watcher waits to see whether
-  a second tap follows.
+  a second press starts; the moment it does, the pending switch is cancelled.
 - While the screen is locked, macOS doesn't pass key presses to apps — the key doesn't
   work there.
 

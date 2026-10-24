@@ -79,18 +79,25 @@ static void log_line(const char *fmt, ...) {
 }
 
 // Files in the user's temporary folder: the ID of the turned-off display (it drops out
-// of the display list) and the mark “no permission, already logged”.
-static const char *temp_path(const char *name) {
-  static char path[PATH_MAX];
+// of the display list) and the mark “no permission, already logged”. Each name has its
+// own buffer, so holding one path while asking for the other is safe.
+static const char *temp_path(char *buf, size_t size, const char *name) {
   char dir[PATH_MAX];
   if (confstr(_CS_DARWIN_USER_TEMP_DIR, dir, sizeof dir) == 0)
     return NULL;
-  snprintf(path, sizeof path, "%s%s", dir, name);
-  return path;
+  snprintf(buf, size, "%s%s", dir, name);
+  return buf;
 }
 
-static const char *state_path(void) { return temp_path("blackpane.builtin-id"); }
-static const char *no_access_path(void) { return temp_path("blackpane.no-access"); }
+static const char *state_path(void) {
+  static char path[PATH_MAX];
+  return temp_path(path, sizeof path, "blackpane.builtin-id");
+}
+
+static const char *no_access_path(void) {
+  static char path[PATH_MAX];
+  return temp_path(path, sizeof path, "blackpane.no-access");
+}
 
 static void save_id(CGDirectDisplayID id) {
   const char *p = state_path();
@@ -147,11 +154,11 @@ static int is_external(CGDirectDisplayID id) {
   return !CGDisplayIsBuiltin(id) && is_hardware(id);
 }
 
+// Online, not active: in hardware mirroring only the primary display is active, so an
+// external mirrored onto the built-in would be missed by the active list.
 static int has_external(void) {
   CGDirectDisplayID ids[MAX_DISPLAYS];
-  uint32_t n = 0;
-  if (CGGetActiveDisplayList(MAX_DISPLAYS, ids, &n) != kCGErrorSuccess)
-    return 0;
+  uint32_t n = online(ids);
   for (uint32_t i = 0; i < n; i++)
     if (is_external(ids[i]))
       return 1;
@@ -292,10 +299,11 @@ static void on_reconfig(CGDirectDisplayID id, CGDisplayChangeSummaryFlags flags,
 
 // --- right Option ---
 //
-// A single tap of the right Option with no other key — toggle. A double tap (second
-// tap within TAP_GAP_SEC) — nothing: it's left to other apps. That's why toggle runs
-// TAP_GAP_SEC after the tap — waiting for a possible second one. Option together with
-// another key is plain Option and doesn't count.
+// A single tap of the right Option with no other key, modifier, mouse button or scroll —
+// toggle. A double tap (second press starting within TAP_GAP_SEC of the first release)
+// — nothing: it's left to other apps. That's why toggle runs TAP_GAP_SEC after the tap
+// — waiting for a possible second one; the second press cancels it as soon as it starts.
+// Option together with anything else is plain Option and doesn't count.
 //
 // The tap only listens (kCGEventTapOptionListenOnly) and changes nothing; it needs the
 // Input Monitoring permission. The program is signed ad hoc, so after every rebuild
@@ -306,33 +314,84 @@ static void on_reconfig(CGDirectDisplayID id, CGDisplayChangeSummaryFlags flags,
 #define RIGHT_ALT_MASK 0x40     // NX_DEVICERALTKEYMASK: right Option is down
 #define TAP_GAP_SEC 0.35        // window for a second tap
 #define TAP_HOLD_SEC 0.5        // held longer — not a tap
+#define LEFT_ALT_MASK 0x20      // NX_DEVICELALTKEYMASK: left Option is down
+// Modifiers that must not be held when the right Option goes down.
+#define OTHER_MODIFIERS                                                                \
+  (kCGEventFlagMaskShift | kCGEventFlagMaskControl | kCGEventFlagMaskCommand |       \
+   kCGEventFlagMaskSecondaryFn | LEFT_ALT_MASK)
 #define NO_ACCESS_EXIT_SEC 10.0 // no permission — exit, launchd starts us again
 #define EXIT_NO_ACCESS 75       // EX_TEMPFAIL: launchd restarts only after an error exit
+#define ACCESS_CHECK_SEC 2.0    // `blackpane access` didn't answer — give up waiting
+#define RESTORE_TRIES 5         // turning the display on before exit: attempts …
+#define RESTORE_PAUSE_US 500000 // … and the pause between them
 
 static CFMachPortRef tap;
 static int ropt_down;           // right Option is down now
-static int ropt_clean;          // no other key while it was held
+static int ropt_clean;          // nothing else was held or pressed with it
+static int ropt_second;         // this press started while a tap was pending: double
 static CFAbsoluteTime ropt_since;
 static unsigned tap_gen;        // ID of the pending toggle; any other ID — cancelled
 static int tap_waiting;
 
+// Turn the built-in display on, retrying: CoreGraphics may refuse for a moment (sleep,
+// display reconfiguration). Used before exiting, when there's no later check to retry.
+static CGError restore_builtin(void) {
+  CGDirectDisplayID b = load_id();
+  CGError err = kCGErrorSuccess;
+  for (int i = 0; i < RESTORE_TRIES; i++) {
+    if (find_builtin())
+      return kCGErrorSuccess;
+    err = set_enabled(b ? b : 1, true);
+    if (err == kCGErrorSuccess)
+      return err;
+    usleep(RESTORE_PAUSE_US);
+  }
+  return err;
+}
+
 // Is the permission still granted? macOS keeps feeding an existing tap after the
 // permission is revoked, and this process's own answer is cached — so ask a fresh
-// process: `blackpane access`. Only on a tap, a few milliseconds. If the check itself
-// can't run, assume granted.
+// process: `blackpane access`. Only on a tap, a few milliseconds. The child gets default
+// signal handling back (the watcher ignores SIGTERM and friends) and is killed if it
+// doesn't answer in ACCESS_CHECK_SEC, so a stuck check can't freeze the watcher. If the
+// check itself can't run or doesn't answer, assume granted.
 static int access_still_granted(void) {
   char self[PATH_MAX];
   uint32_t size = sizeof self;
   if (_NSGetExecutablePath(self, &size) != 0)
     return 1;
   char *args[] = {self, "access", NULL};
+  posix_spawnattr_t attr;
+  sigset_t dflt;
+  sigemptyset(&dflt);
+  sigaddset(&dflt, SIGTERM);
+  sigaddset(&dflt, SIGINT);
+  sigaddset(&dflt, SIGHUP);
+  sigaddset(&dflt, SIGQUIT);
+  posix_spawnattr_init(&attr);
+  posix_spawnattr_setsigdefault(&attr, &dflt);
+  posix_spawnattr_setflags(&attr, POSIX_SPAWN_SETSIGDEF);
   pid_t pid;
+  int rc = posix_spawn(&pid, self, NULL, &attr, args, NULL);
+  posix_spawnattr_destroy(&attr);
+  if (rc != 0)
+    return 1;
   int status;
-  if (posix_spawn(&pid, self, NULL, NULL, args, NULL) != 0)
-    return 1;
-  if (waitpid(pid, &status, 0) != pid || !WIFEXITED(status))
-    return 1;
-  return WEXITSTATUS(status) == 0;
+  CFAbsoluteTime deadline = CFAbsoluteTimeGetCurrent() + ACCESS_CHECK_SEC;
+  for (;;) {
+    pid_t r = waitpid(pid, &status, WNOHANG);
+    if (r == pid)
+      return !WIFEXITED(status) || WEXITSTATUS(status) == 0;
+    if (r < 0)
+      return 1;
+    if (CFAbsoluteTimeGetCurrent() > deadline) {
+      kill(pid, SIGKILL);
+      waitpid(pid, &status, 0);
+      log_line("permission check didn't answer — assuming granted");
+      return 1;
+    }
+    usleep(5000);
+  }
 }
 
 static void tap_fire(void *ctx) {
@@ -340,10 +399,13 @@ static void tap_fire(void *ctx) {
     return;
   tap_waiting = 0;
   if (!access_still_granted()) {
-    // Revoked: leave the display alone and restart without permission — the new
-    // watcher waits for it like after a fresh install.
+    // Revoked: the key won't work any more, so don't leave the user with a dark
+    // built-in display — turn it on, then restart without permission; the new watcher
+    // waits for it like after a fresh install.
     CGEventTapEnable(tap, false);
     log_line("Input Monitoring permission revoked — key ignored, restarting");
+    if (!find_builtin())
+      log_event("turning the built-in display on before restart", restore_builtin());
     exit(EXIT_NO_ACCESS);
   }
   int rc = cmd_toggle();
@@ -353,11 +415,6 @@ static void tap_fire(void *ctx) {
 }
 
 static void on_tap(void) {
-  if (tap_waiting) { // second tap — a double tap, do nothing
-    tap_waiting = 0;
-    tap_gen++;
-    return;
-  }
   tap_waiting = 1;
   tap_gen++;
   dispatch_after_f(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(TAP_GAP_SEC * NSEC_PER_SEC)),
@@ -369,10 +426,14 @@ static CGEventRef on_event(CGEventTapProxy proxy, CGEventType type, CGEventRef e
   (void)proxy;
   (void)ctx;
   if (type == kCGEventTapDisabledByTimeout || type == kCGEventTapDisabledByUserInput) {
+    // Events were lost while disabled — forget a half-seen press.
+    ropt_down = 0;
+    ropt_clean = 0;
+    ropt_second = 0;
     CGEventTapEnable(tap, true);
     return ev;
   }
-  if (type == kCGEventKeyDown) {
+  if (type != kCGEventFlagsChanged) { // a key, mouse button or scroll
     ropt_clean = 0;
     return ev;
   }
@@ -382,14 +443,22 @@ static CGEventRef on_event(CGEventTapProxy proxy, CGEventType type, CGEventRef e
     ropt_clean = 0;
     return ev;
   }
-  int down = (CGEventGetFlags(ev) & RIGHT_ALT_MASK) != 0;
+  CGEventFlags flags = CGEventGetFlags(ev);
+  int down = (flags & RIGHT_ALT_MASK) != 0;
   if (down && !ropt_down) {
     ropt_down = 1;
-    ropt_clean = 1;
+    ropt_clean = (flags & OTHER_MODIFIERS) == 0;
     ropt_since = CFAbsoluteTimeGetCurrent();
+    ropt_second = tap_waiting;
+    if (tap_waiting) { // second press within the window — cancel the pending toggle
+      tap_waiting = 0;
+      tap_gen++;
+    }
   } else if (!down && ropt_down) {
     ropt_down = 0;
-    if (ropt_clean && CFAbsoluteTimeGetCurrent() - ropt_since < TAP_HOLD_SEC)
+    if (ropt_second)
+      ropt_second = 0; // end of a double tap — nothing to do
+    else if (ropt_clean && CFAbsoluteTimeGetCurrent() - ropt_since < TAP_HOLD_SEC)
       on_tap();
   }
   return ev;
@@ -418,7 +487,10 @@ static void start_tap(void) {
                      dispatch_get_main_queue(), NULL, exit_for_restart);
     return;
   }
-  CGEventMask mask = CGEventMaskBit(kCGEventFlagsChanged) | CGEventMaskBit(kCGEventKeyDown);
+  CGEventMask mask =
+      CGEventMaskBit(kCGEventFlagsChanged) | CGEventMaskBit(kCGEventKeyDown) |
+      CGEventMaskBit(kCGEventLeftMouseDown) | CGEventMaskBit(kCGEventRightMouseDown) |
+      CGEventMaskBit(kCGEventOtherMouseDown) | CGEventMaskBit(kCGEventScrollWheel);
   tap = CGEventTapCreate(kCGSessionEventTap, kCGTailAppendEventTap,
                          kCGEventTapOptionListenOnly, mask, on_event, NULL);
   if (!tap) {
@@ -438,19 +510,21 @@ static void start_tap(void) {
 // A turned-off display survives logout, the watcher doesn't: at logout launchd sends it
 // SIGTERM. So on termination signals the watcher first turns the built-in display on,
 // then exits — the login window appears on it too. This is a clean exit (code 0), and
-// launchd doesn't restart the watcher.
+// launchd doesn't restart the watcher. If the display still can't be turned on after
+// retries, exit with an error: where launchd still manages the agent it starts the
+// watcher again, and that one turns the display on at start if no external is left.
 // SIGKILL can't be caught; that's an unclean exit, launchd starts the watcher again,
 // and on start it turns the display on if no external monitor is connected.
 
 static void restore_and_exit(void *ctx) {
   int sig = (int)(intptr_t)ctx;
+  CGError err = kCGErrorSuccess;
   if (!find_builtin()) {
-    CGDirectDisplayID b = load_id();
-    CGError err = set_enabled(b ? b : 1, true);
+    err = restore_builtin();
     log_line("signal %d — turning the built-in display on before exit err=%d", sig, err);
   }
   log_line("watcher stopped by signal %d", sig);
-  exit(0);
+  exit(err == kCGErrorSuccess ? 0 : 1);
 }
 
 static void restore_on_signals(void) {

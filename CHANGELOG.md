@@ -2,6 +2,29 @@
 
 Versions follow `MAJOR.MINOR.PATCH`: a fix bumps the patch, a new feature bumps the minor.
 
+## 0.7.1 — 2026-10-25
+
+Fixes from code review:
+
+- The right Option no longer switches the display when used with a mouse click or
+  scroll (Option-click), or with another modifier already held.
+- A double tap whose second press starts within the window but ends after it no longer
+  switches the display twice: the second press cancels the pending switch when it starts.
+- A press half-seen while the event tap was disabled no longer breaks the next tap.
+- The permission check on a tap gives up after 2 s instead of blocking the watcher.
+- When the permission is revoked and the built-in display is off, it's turned on before
+  the restart — the key no longer works.
+- Turning the display on before exit is retried; if it still fails, the watcher exits
+  with an error so launchd can start it again.
+- An external monitor in hardware mirroring is recognised (online displays, not only
+  active ones).
+- `make install` creates `~/Library/LaunchAgents` if it doesn't exist.
+- `make install SIGN="…"` and a newly created certificate re-sign the program even when
+  the source is unchanged; an unrelated `SIGN` in the environment is ignored; only valid
+  certificates are picked automatically.
+- `make cert` run after an interrupted run trusts the already imported certificate.
+- `make uninstall` no longer prints an ignored error when the program is already gone.
+
 ## 0.7.0 — 2026-10-25
 
 - `make cert` creates a self-signed code-signing certificate (`blackpane-signing`,
