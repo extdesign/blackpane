@@ -1,3 +1,5 @@
+<p align="center"><img src="assets/wordmark.svg" width="520" alt="blackpane"></p>
+
 # blackpane
 
 [English](README.md) | **Русский**
@@ -25,6 +27,7 @@
 src/blackpane.m                        программа
 launchd/extdesign.blackpane.plist.in   шаблон агента launchd
 Makefile                               сборка, установка, удаление
+assets/wordmark.svg                    название для шапки README
 build/                                 результат сборки (не в git)
 ```
 

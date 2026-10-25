@@ -1,3 +1,5 @@
+<p align="center"><img src="assets/wordmark.svg" width="520" alt="blackpane"></p>
+
 # blackpane
 
 **English** | [Русский](README.ru.md)
@@ -27,6 +29,7 @@ Developed and tested on a MacBook Pro 16″ (M1 Pro) with macOS 27.0.1 (26A434).
 src/blackpane.m                        the program
 launchd/extdesign.blackpane.plist.in   launchd agent template
 Makefile                               build, install, uninstall
+assets/wordmark.svg                    the name for the README header
 build/                                 build output (not in git)
 ```
 
